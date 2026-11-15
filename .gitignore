@@ -1,0 +1,7 @@
+.chrome-profile/
+launchd.err.log
+launchd.out.log
+refresh.log
+pipeline/progress.txt
+pipeline/bookings.json
+pipeline/rides_enriched.json
