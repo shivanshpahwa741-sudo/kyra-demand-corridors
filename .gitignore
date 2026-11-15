@@ -1,7 +1,16 @@
+# Admin session / cached JS / cookies — NEVER commit
 .chrome-profile/
+
+# Raw admin data (rider names, phone numbers, raw addresses)
+data/
+pipeline/bookings.json
+pipeline/rides_enriched.json
+pipeline/localities.json
+pipeline/locality_routes.json
+pipeline/progress.txt
+pipeline/kyra-demand-corridors.html
+
+# Logs
 launchd.err.log
 launchd.out.log
 refresh.log
-pipeline/progress.txt
-pipeline/bookings.json
-pipeline/rides_enriched.json

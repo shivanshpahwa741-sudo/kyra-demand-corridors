@@ -29,7 +29,7 @@ python3.12 inline_viz.py
 if git diff --quiet index.html; then
   echo "[git] no changes"
 else
-  git add index.html data/bookings.json
+  git add index.html
   git commit -m "Daily refresh $(date +%Y-%m-%d)"
   git push origin main
   echo "[git] pushed"
