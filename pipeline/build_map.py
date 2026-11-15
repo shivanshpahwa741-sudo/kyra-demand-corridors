@@ -64,12 +64,31 @@ def main():
     locality_drop_recent = Counter()
     RECENT_CUTOFF_DAYS = 30
 
+    hyperlocal_count = 0
+    one_end_missing = 0
     for r in parsed:
         f, t = r['from_loc'], r['to_loc']
-        if not f or not t or f == t: continue
         dt = r['when_dt']
-        w = recency_weight(dt)
         is_recent = dt and (now - dt).days <= RECENT_CUTOFF_DAYS
+        if not f or not t:
+            one_end_missing += 1
+            # still contribute to whichever end we have
+            if f:
+                locality_pickup[f] += 1
+                if is_recent: locality_pickup_recent[f] += 1
+            if t:
+                locality_drop[t] += 1
+                if is_recent: locality_drop_recent[t] += 1
+            continue
+        if f == t:
+            hyperlocal_count += 1
+            locality_pickup[f] += 1
+            locality_drop[t] += 1
+            if is_recent:
+                locality_pickup_recent[f] += 1
+                locality_drop_recent[t] += 1
+            continue
+        w = recency_weight(dt)
         locality_pickup[f] += 1
         locality_drop[t] += 1
         if is_recent:
@@ -100,8 +119,12 @@ def main():
         })
 
     final.sort(key=lambda x: -x['weighted'])
-    total_mapped = sum(c['count'] for c in final)
+    corridor_rides = sum(c['count'] for c in final)
+    total_mapped = corridor_rides + hyperlocal_count
     total_rides = len(rides)
+    unmapped_norte = sum(1 for r in parsed if r['from_loc'] and r['to_loc']
+                        and r['from_loc'] != r['to_loc']
+                        and not routes.get(f"{r['from_loc']}||{r['to_loc']}"))
 
     def named(c):
         return not (c['f'].startswith('PIN ') or c['t'].startswith('PIN '))
@@ -132,6 +155,10 @@ def main():
         'total_rides': total_rides,
         'total_unique': len(parsed),
         'total_mapped': total_mapped,
+        'corridor_rides': corridor_rides,
+        'hyperlocal_rides': hyperlocal_count,
+        'one_end_missing': one_end_missing,
+        'unroutable': unmapped_norte,
         'unique_corridors': len(final),
         'top_recency': top_recency,
         'top_volume': top_volume,
@@ -147,7 +174,8 @@ def main():
     with open(OUT, 'w') as f: f.write(html)
     print(f'Wrote {OUT}')
     print(f'  Corridors: {len(final)}')
-    print(f'  Rides mapped: {total_mapped}/{total_rides}')
+    print(f'  Rides mapped: {total_mapped}/{total_rides}  (corridors={corridor_rides}, hyperlocal={hyperlocal_count})')
+    print(f'  One-end-missing: {one_end_missing}  Missing-route: {unmapped_norte}')
     print(f'  Locality markers: {len(locality_markers)}')
     print(f'  Top by recency: {top_recency[0]["f"]} → {top_recency[0]["t"]} ({top_recency[0]["count"]} rides)' if top_recency else '  No top corridor')
 
@@ -389,7 +417,7 @@ document.getElementById('stat-window').textContent = DATA.span_days;
 const map = L.map('map', {
   center: [12.9716, 77.5946],
   zoom: 11, zoomControl: true, worldCopyJump: false, renderer: L.canvas(),
-  maxBounds: [[12.55, 77.2], [13.35, 78.0]], maxBoundsViscosity: 0.8,
+  maxBounds: [[11.8, 73.5], [19.5, 81.0]], maxBoundsViscosity: 0.8,
   minZoom: 11, maxZoom: 15,
 });
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {

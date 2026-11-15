@@ -71,10 +71,55 @@ LOCALITIES = [
     'Byatarayanapura CMC', 'Ganganagar', 'J.C. Nagar', 'JC Nagar', 'Kacharakanahalli',
     'Chikkabettahalli', 'Kurubarahalli', 'Vasanthpura', 'Kodigehalli Main Rd',
     'Puttenahalli', 'Deepanjali Nagar', 'Nagasandra', 'Dasarahalli (T)',
+    # Second round: verified via Nominatim from unmatched-address pull (Nov 2026)
+    'Dyavasandra', 'Yeswanthpur', 'Sanjayanagara', 'Singasandra', 'Jakkuru',
+    'Wilson Garden', 'Neelasandra', 'Bylahalli', 'Sriramapura', 'Mavalli',
+    'Jayamahal', 'Langford Gardens', 'Choodasandra', 'Halanayakanahalli',
+    'Balagere', 'C V Raman Nagar', 'Munnekolala', 'Munekolala', 'Vaddarapalya',
+    'Madapatna', 'Sirsi', 'Jyothi Nagar', 'Dandupalya', 'D Group Employees Layout',
+    'Bandapura', 'V. Kallahalli', 'Kallahalli', 'Marsur', 'Radha Reddy Layout',
+    'Someshwara Layout', 'Banasawadi', 'Nagapura', 'Villa-220', 'Chip Street',
+    'Norbert Church Road', 'Bukkasagara', 'Doddanekundi', 'Dodda Nekkundi',
+    'Seenappa Layout', 'Srinivasapura', 'Byagadadenahalli', 'Basapura',
+    'Munimarappa Garden', 'Chinnappa Garden', 'J.C.Nagar',
+    'Varanasi', 'Srinivasa Nagar', 'Sathanur', 'Hosa Road',
+    'Margondanahalli', 'Cheemasandra', 'Bidarahalli', 'Sunkadakatte',
+    'Hosahalli', 'Kanaka Nagar',
+    # Manual Bangalore additions (confirmed from address-token inspection)
+    'Kaval Bairasandra', 'Kavalbyrasandra', 'HMT Housing Colony', 'HMT Layout',
+    'Uttarahalli Hobli', 'Uttarahalli', 'Nagarathpete', 'Tharagupet',
+    'New Tharagupet', 'Chinnapanna Halli', 'Chinnapanahalli',
+    'Varadharaja Nagar', 'Varadaraja Nagar', 'Kaikodrahalli', 'Kaikondrahalli',
+    'Vidyamanya Nagar', 'Jarakbandekaval', 'Aavalahalli', 'Avalahalli',
+    'Volagerekallahalli', 'Kitthanahalli', 'Kittaganahalli',
+    'Geleyarabalaga', 'Hoskote', 'R.M.V. 2nd Stage', 'RMV 2nd Stage', 'RMV',
+    # Outside-Bangalore cities (preserve rides that start/end there)
+    'Mysuru', 'Mysore', 'Hyderabad', 'Secunderabad', 'Chennai',
+    'Belagavi', 'Belgaum', 'Kolhapur', 'Warangal', 'Vijayapura', 'Bijapur',
+    'Tumakuru', 'Tumkur', 'Kolar',
 ]
+
+OUTSIDE_CITIES = {
+    'Mysuru': 'Mysuru', 'Mysore': 'Mysuru', 'Hale Kesare': 'Mysuru', 'Bhogadi': 'Mysuru',
+    'Hyderabad': 'Hyderabad', 'Secunderabad': 'Hyderabad',
+    'Chennai': 'Chennai',
+    'Belagavi': 'Belagavi', 'Belgaum': 'Belagavi',
+    'Kolhapur': 'Kolhapur',
+    'Warangal': 'Warangal',
+    'Vijayapura': 'Vijayapura', 'Bijapur': 'Vijayapura',
+    'Tumakuru': 'Tumakuru', 'Tumkur': 'Tumakuru', 'Vadanakallu': 'Tumakuru',
+    'Kolar': 'Kolar', 'Srinivaspura': 'Kolar',
+    'Nizamabad': 'Nizamabad',
+    'Siddipet': 'Siddipet',
+}
 
 def extract_locality(addr):
     if not addr: return None
+    # Outside-Bangalore cities first (they take precedence: a Mysuru address
+    # shouldn't be mis-labeled as some stray Bangalore token.)
+    for city_token, canonical in OUTSIDE_CITIES.items():
+        if re.search(r'\b' + re.escape(city_token) + r'\b', addr, re.IGNORECASE):
+            return f'{canonical} City'
     for loc in LOCALITIES:
         if re.search(r'\b' + re.escape(loc) + r'\b', addr, re.IGNORECASE):
             return normalize(loc)
@@ -106,8 +151,12 @@ def normalize(loc):
     t = re.sub(r'^Banashankari.*$', 'Banashankari', t) if t.startswith('Banashankari') else t
     return t
 
-def nominatim(q):
-    url = f'https://nominatim.openstreetmap.org/search?q={quote(q)}&format=json&limit=1&countrycodes=in&viewbox=77.3,12.75,77.85,13.20&bounded=1'
+def nominatim(q, bounded=True):
+    base = 'https://nominatim.openstreetmap.org/search'
+    if bounded:
+        url = f'{base}?q={quote(q)}&format=json&limit=1&countrycodes=in&viewbox=77.3,12.75,77.85,13.20&bounded=1'
+    else:
+        url = f'{base}?q={quote(q)}&format=json&limit=1&countrycodes=in'
     req = Request(url, headers={'User-Agent': UA, 'Accept': 'application/json'})
     try:
         with urlopen(req, timeout=15) as r:
@@ -185,9 +234,17 @@ def main():
 
     for i, loc in enumerate(uniq):
         if loc in loc_coords: continue
-        q = loc if loc.startswith('PIN') else f'{loc}, Bengaluru, Karnataka, India'
-        q = q.replace('PIN ', '')
-        res = nominatim(q)
+        is_outside = loc.endswith(' City')
+        if is_outside:
+            name = loc.removesuffix(' City')
+            q = f'{name}, India'
+            res = nominatim(q, bounded=False)
+        elif loc.startswith('PIN'):
+            q = loc.removeprefix('PIN ')
+            res = nominatim(q, bounded=True) or nominatim(q, bounded=False)
+        else:
+            q = f'{loc}, Bengaluru, Karnataka, India'
+            res = nominatim(q, bounded=True) or nominatim(q, bounded=False)
         loc_coords[loc] = {'lat': res[0], 'lon': res[1]} if res else None
         if (i+1) % 20 == 0:
             with open(OUT_LOCS, 'w') as f: json.dump(loc_coords, f)
