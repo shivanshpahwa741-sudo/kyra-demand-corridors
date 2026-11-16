@@ -882,8 +882,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <div class="legend-row"><div class="legend-swatch" style="background: rgba(255,77,122,0.75); height: 3px;"></div>2–4 requests</div>
     <div class="legend-row"><div class="legend-swatch" style="background: rgba(255,136,51,0.9); height: 5px;"></div>5–9 requests</div>
     <div class="legend-row"><div class="legend-swatch" style="background: rgba(255,204,51,1); height: 7px;"></div>10+ requests</div>
-    <div class="legend-row" style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);"><div class="legend-swatch" style="background: #22e58a; height: 3px; border-top: 1px dashed #0a0a0d;"></div><span style="color: var(--signal); font-weight:600;">Matched ride (completed)</span></div>
-    <div class="legend-note">Each corridor is a real driving route between neighbourhoods. Recent rides glow brightest. Green signals a corridor where at least one booking was matched to a driver — including its pickup and drop locality. Half-life: 21 days.</div>
+    <div class="legend-row" style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.06);"><div class="legend-swatch" style="background: #22e58a; height: 3px;"></div><span style="color: var(--signal); font-weight:600;">Matched ride (driver found)</span></div>
+    <div class="legend-row"><div style="width:24px; display:flex; justify-content:space-between; align-items:center;"><span style="width:8px; height:8px; border-radius:50%; background:#22e58a; display:inline-block;"></span><span style="width:8px; height:8px; border-radius:50%; border:2px solid #22e58a; display:inline-block;"></span></div><span style="color: var(--ink-soft);">pickup · drop</span></div>
+    <div class="legend-note">Each corridor is a real driving route between neighbourhoods. Recent rides glow brightest. Green highlights the rides that actually went through — the line is the completed ride, the dots are its pickup and drop. Half-life: 21 days.</div>
   </div>
 </div>
 
@@ -996,7 +997,8 @@ function drawCorridors() {
     }
     corridorLayer.addLayer(poly);
   });
-  // Green overlay for matched corridors — drawn last so they sit on top.
+  // Green overlay for matched corridors — the line is the successful ride.
+  // Endpoint dots show its pickup (filled) and drop (ring) in green.
   sorted.filter(c => (c.mx || 0) > 0).forEach(c => {
     const latlngs = c.g.map(p => [p[1], p[0]]);
     const glow = L.polyline(latlngs, {
@@ -1011,6 +1013,18 @@ function drawCorridors() {
     });
     corridorLayer.addLayer(glow);
     corridorLayer.addLayer(core);
+    const start = latlngs[0];
+    const end = latlngs[latlngs.length - 1];
+    const pickupDot = L.circleMarker(start, {
+      radius: 6, color: '#0a0a0d', weight: 1.5,
+      fillColor: '#22e58a', fillOpacity: 1, opacity: 1,
+    }).bindPopup(`<div class="popup-head" style="color: var(--signal);">Matched pickup</div><div class="popup-stat">${c.f} → ${c.t}</div>`);
+    const dropDot = L.circleMarker(end, {
+      radius: 6, color: '#22e58a', weight: 2.5,
+      fillColor: '#0a0a0d', fillOpacity: 0.9, opacity: 1,
+    }).bindPopup(`<div class="popup-head" style="color: var(--signal);">Matched drop</div><div class="popup-stat">${c.f} → ${c.t}</div>`);
+    corridorLayer.addLayer(pickupDot);
+    corridorLayer.addLayer(dropDot);
   });
 }
 
@@ -1019,27 +1033,18 @@ function makeLocalityMarkers(mode) {
   DATA.localities.forEach(l => {
     const val = mode === 'pickups' ? l.pickups : l.dropoffs;
     if (val === 0) return;
-    const matched = mode === 'pickups' ? (l.pickups_matched || 0) : (l.dropoffs_matched || 0);
-    const hasSignal = matched > 0;
     const r = Math.min(4 + Math.sqrt(val) * 2.3, 32);
     const alpha = Math.min(0.25 + val / 60, 0.85);
-    const baseFill = mode === 'pickups' ? '#ffcc33' : '#ff4d7a';
     const marker = L.circleMarker([l.lat, l.lon], {
-      radius: r,
-      color: hasSignal ? '#22e58a' : '#ffcc33',
-      fillColor: hasSignal ? '#22e58a' : baseFill,
-      fillOpacity: hasSignal ? Math.max(alpha, 0.55) : alpha,
-      weight: hasSignal ? 2.2 : 1.4,
-      opacity: hasSignal ? 1 : 0.9,
+      radius: r, color: '#ffcc33',
+      fillColor: mode === 'pickups' ? '#ffcc33' : '#ff4d7a',
+      fillOpacity: alpha, weight: 1.4, opacity: 0.9,
     });
     const recent = mode === 'pickups' ? l.pickups_recent : l.dropoffs_recent;
-    const label = mode === 'pickups' ? 'pickups' : 'drop-offs';
-    const matchedLine = hasSignal ? `<div class="popup-stat" style="color: var(--signal);"><b>${matched}</b> completed (matched)</div>` : '';
     marker.bindPopup(`
       <div class="popup-head">${l.name}</div>
-      <div class="popup-stat"><b>${val}</b> ${label}</div>
+      <div class="popup-stat"><b>${val}</b> ${mode === 'pickups' ? 'pickups' : 'drop-offs'}</div>
       <div class="popup-stat"><b>${recent}</b> in last 30 d</div>
-      ${matchedLine}
     `);
     markers.push(marker);
   });
